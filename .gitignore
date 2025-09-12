@@ -1,0 +1,78 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Python packaging
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# PyTorch / Ultralytics outputs
+runs/
+weights/
+*.pt
+*.pth
+
+# Dataset caches and large data
+dataset/**/labels.cache
+dataset/**/cache
+*.zip
+*.tar
+*.tgz
+*.npz
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Logs and temp
+*.log
+tmp/
+*.tmp
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Mac specific
+.AppleDouble
+.LSOverride
+
+# Ignore local config files
+.local_config.yaml
+
+# Ignore test outputs and results
+test_results_*
+val_batch*_pred.jpg
+val_batch*_labels.jpg
+PosePR_curve.png
+PoseF1_curve.png
+confusion_matrix.png
+results.png
+labels.jpg
+
+# Ignore generated scripts
+improved_training.py
+tta_inference.py
+accuracy_improvement_guide.py
+pose-metrics-analysis.py
+inference-timing.py
+
+# Keep README and project files
+!readme.md
+
+# Unwanted datasets
+/dataset/glue/
+/dataset/moorebot_v1/
