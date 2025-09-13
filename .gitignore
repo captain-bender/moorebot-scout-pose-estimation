@@ -74,5 +74,5 @@ inference-timing.py
 !readme.md
 
 # Unwanted datasets
-/dataset/glue/
-/dataset/moorebot_v1/
+/dataset/
+/runs/
