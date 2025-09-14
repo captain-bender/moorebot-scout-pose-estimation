@@ -1,6 +1,6 @@
-# PoseYOLO - Moorebot Robot Pose Detection with YOLO11
+# moorebotPose - Moorebot Robot Pose Detection using YOLO11
 
-A custom pose detection project using YOLO11 for detecting and tracking Moorebot robot keypoints for robotic applications and automation.
+A custom pose detection project using YOLO11 for detecting and tracking Moorebot scout robot keypoints for robotic applications and automation.
 
 ## Overview
 
@@ -14,30 +14,6 @@ This project implements robot pose detection using the YOLO11 pose estimation mo
 - Easy-to-use inference pipeline
 - Visualization of detected robot poses with keypoints
 - Comprehensive performance metrics and evaluation tools
-
-## Project Structure
-
-```
-poseYolo/
-├── training.py               # Model training script
-├── test-evaluation.py             # Test dataset evaluation
-├── test-individual.py             # Individual image testing
-├── test-inference.py              # Inference testing
-├── pose-metrics-analysis.py       # Comprehensive pose metrics
-├── inference-timing.py            # Performance benchmarking
-├── visualise_annotations.py       # Dataset visualization
-├── visualise_annotations_arrows.py # Advanced visualization
-├── dataset/                      # Training datasets
-│   ├── moorebot_vX/              # Moorebot v2 dataset
-│   │   ├── data.yaml             # Dataset configuration
-│   │   ├── train/                # Training images and labels
-│   │   ├── valid/                # Validation images and labels
-│   │   └── test/                 # Test images and labels
-├── runs/                         # Training outputs and results
-│   └── moorebot_vX/              # Moorebot training results
-├── misc/                         # Miscellaneous files
-└── readme.md                     # This file
-```
 
 ## Installation
 
@@ -107,6 +83,13 @@ flip_idx: [2, 1, 0]
 nc: 1
 names: ['robot']
 ```
+
+## Datasets
+The datasets can be found in roboflow universe:
+- [version 4](https://universe.roboflow.com/moorebot-scout/moorebot-pose-g9lqr/dataset/4): Data set curation performed to add preprocessing steps and augmentations.
+- [version 3](https://universe.roboflow.com/moorebot-scout/moorebot-pose-g9lqr/dataset/3): More images added, keypoints sceleton remained the same.
+- [version 2](https://universe.roboflow.com/moorebot-scout/moorebot-pose-g9lqr/dataset/2): Initial small datset, sceleton definition updated, results more promisin.
+- [version 1](https://universe.roboflow.com/moorebot-scout/moorebot-pose-g9lqr/dataset/1): Initial small dataset, keypoints sceleton very strict defined, results were not so encouraging.
 
 ## Dependencies
 
