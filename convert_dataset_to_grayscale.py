@@ -57,6 +57,48 @@ def convert_split_to_gray(dataset_root: Path, split: str, dest_name: str):
     return dest_root
 
 
+def convert_images_to_gray(dataset_root: Path, split: str, dest_name: str, image_names: list[str]):
+    """Convert only the provided image names from a dataset split to grayscale (3-channel) and copy labels.
+
+    Returns the destination split root (Path): dataset_root/dest_name
+    """
+    src_images = dataset_root / split / 'images'
+    src_labels = dataset_root / split / 'labels'
+    if not src_images.exists():
+        raise FileNotFoundError(f"Source images folder not found: {src_images}")
+
+    dest_root = dataset_root / dest_name
+    dest_images = dest_root / 'images'
+    dest_labels = dest_root / 'labels'
+    dest_images.mkdir(parents=True, exist_ok=True)
+    dest_labels.mkdir(parents=True, exist_ok=True)
+
+    print(f"Converting {len(image_names)} images from {src_images} -> {dest_images}")
+
+    for name in image_names:
+        img_path = src_images / name
+        if not img_path.exists():
+            print(f"  warning: missing source image {img_path}, skipping")
+            continue
+        img = cv2.imread(str(img_path))
+        if img is None:
+            print(f"  warning: failed to read {img_path}, skipping")
+            continue
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        dest_path = dest_images / img_path.name
+        cv2.imwrite(str(dest_path), gray_bgr)
+
+        # copy corresponding label file if present
+        label_src = src_labels / (img_path.stem + '.txt')
+        label_dest = dest_labels / (img_path.stem + '.txt')
+        if label_src.exists():
+            shutil.copy2(str(label_src), str(label_dest))
+
+    print('Done converting selected images and copying labels.')
+    return dest_root
+
+
 def create_gray_data_yaml(orig_yaml: Path, dataset_root: Path, dest_name: str, out_yaml: Path):
     with open(orig_yaml, 'r') as f:
         data = yaml.safe_load(f)

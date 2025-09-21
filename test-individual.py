@@ -6,24 +6,24 @@ from pathlib import Path
 import shutil
 import yaml
 from datetime import datetime
+import random
 
 
-def make_gray_image_if_needed(dataset_root: Path, split: str, img_name: str, keep_temp: bool = False) -> Path:
-    """Return path to image to use for inference.
-    If grayscale is requested, create a grayscale copy for this image under a temp split and return its path.
+def make_gray_images_if_needed(dataset_root: Path, split: str, img_names: list[str], keep_temp: bool = False) -> Path:
+    """Return path to temp split root containing grayscale copies of the provided image names.
+    Converts only the requested images using convert_dataset_to_grayscale.convert_images_to_gray.
     """
-    from convert_dataset_to_grayscale import convert_split_to_gray
+    from convert_dataset_to_grayscale import convert_images_to_gray
 
     dest_name = f"{split}_gray_tmp"
-    dest_root = convert_split_to_gray(dataset_root, split, dest_name)
-    img_path = dest_root / 'images' / img_name
-    return img_path
+    dest_root = convert_images_to_gray(dataset_root, split, dest_name, img_names)
+    return dest_root
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='runs/moorebot_v5/train-v1/yolo11n-moorebot_v5-pose-v1/weights/best.pt')
-    parser.add_argument('--dataset', type=str, default='./dataset/moorebot_v5')
+    parser.add_argument('--dataset', type=str, default='./datasets/moorebot_v5')
     parser.add_argument('--split', type=str, default='test')
     parser.add_argument('--count', type=int, default=2, help='Number of images to run')
     parser.add_argument('--grayscale', action='store_true', help='Convert images to grayscale before inference')
@@ -41,19 +41,24 @@ def main():
 
     print("Testing on individual images...")
 
-    test_images = [f for f in os.listdir(test_images_dir) if f.endswith(('.jpg', '.jpeg', '.png'))][:args.count]
+    all_images = [f for f in os.listdir(test_images_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    if not all_images:
+        print(f"No images found in {test_images_dir}")
+        return
+    k = min(args.count, len(all_images))
+    test_images = random.sample(all_images, k=k)
 
     # track temporary grayscale folder to optionally cleanup
     gray_dir = None
 
     try:
+        if args.grayscale:
+            print(f"Preparing grayscale images for: {test_images}")
+            gray_root = make_gray_images_if_needed(Path(args.dataset), args.split, test_images, keep_temp=args.keep_temp)
+            gray_dir = gray_root
+
         for img_name in test_images:
-            if args.grayscale:
-                print(f"Preparing grayscale image for: {img_name}")
-                img_path = make_gray_image_if_needed(Path(args.dataset), args.split, img_name, keep_temp=args.keep_temp)
-                gray_dir = Path(args.dataset) / f"{args.split}_gray_tmp"
-            else:
-                img_path = Path(test_images_dir) / img_name
+            img_path = (gray_dir / 'images' / img_name) if (args.grayscale and gray_dir is not None) else (Path(test_images_dir) / img_name)
 
             print(f"\n Processing: {img_name}")
 
