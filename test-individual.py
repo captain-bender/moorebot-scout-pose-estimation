@@ -67,6 +67,9 @@ def main():
 
             # Access results
             for result in results:
+                # Plot first so we can access the palette used for keypoints
+                annotated_frame = result.plot()
+
                 # Get keypoints
                 if result.keypoints is not None:
                     xy = result.keypoints.xy  # x and y coordinates
@@ -74,9 +77,52 @@ def main():
                     print(f"   Detected {len(xy)} pose(s)")
                     print(f"   Keypoints shape: {xy.shape}")
 
-                # Plot and save results
-                annotated_frame = result.plot()
+                    try:
+                        import torch
+                        xy_np = xy.cpu().numpy() if isinstance(xy, torch.Tensor) else xy
+                        conf_arr = None
+                        if conf is not None:
+                            conf_arr = conf
+                            if isinstance(conf_arr, torch.Tensor):
+                                conf_arr = conf_arr.squeeze(-1).cpu().numpy()
 
+                        # Determine per-keypoint colors matching Ultralytics plotting
+                        kp_colors = None
+                        num_kpts = xy_np.shape[1]
+                        try:
+                            from ultralytics.utils.plotting import kpt_color as KP_COLORS, colors as ucolors
+                            if KP_COLORS and len(KP_COLORS) > 0:
+                                # Use provided keypoint palette; pad/trim to match current number of keypoints
+                                kp_colors = [tuple(int(c) for c in KP_COLORS[i % len(KP_COLORS)]) for i in range(num_kpts)]
+                            else:
+                                kp_colors = [ucolors(i, True) for i in range(num_kpts)]
+                        except Exception:
+                            try:
+                                from ultralytics.utils.plotting import colors as ucolors
+                                kp_colors = [ucolors(i, True) for i in range(num_kpts)]
+                            except Exception:
+                                kp_colors = None
+
+                        for i in range(xy_np.shape[0]):
+                            print(f"   Pose {i} keypoints:")
+                            for k in range(xy_np.shape[1]):
+                                xk, yk = float(xy_np[i, k, 0]), float(xy_np[i, k, 1])
+                                color_str = ""
+                                if kp_colors is not None and k < len(kp_colors):
+                                    col = kp_colors[k]
+                                    # Ensure tuple of ints as BGR
+                                    try:
+                                        bgr = tuple(int(c) for c in col)
+                                    except Exception:
+                                        bgr = col
+                                    color_str = f", color(BGR)={bgr}"
+                                if conf_arr is not None:
+                                    ck = float(conf_arr[i, k])
+                                    print(f"     kp[{k}]: x={xk:.1f}, y={yk:.1f}, conf={ck:.3f}{color_str}")
+                                else:
+                                    print(f"     kp[{k}]: x={xk:.1f}, y={yk:.1f}{color_str}")
+                    except Exception as e:
+                        print(f"   Warning: failed to print per-keypoint confidences/colors: {e}")
                 # Build structured output directory under tests/
                 dataset_name = Path(args.dataset).name
                 model_name = Path(args.model).parent.parent.name if 'weights' in args.model else Path(args.model).stem
