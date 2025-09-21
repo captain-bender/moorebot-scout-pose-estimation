@@ -74,5 +74,6 @@ inference-timing.py
 !readme.md
 
 # Unwanted datasets
-/dataset/
+/datasets/
 /runs/
+/tests/
