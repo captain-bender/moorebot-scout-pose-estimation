@@ -64,6 +64,32 @@ python test-individual.py      # Individual image testing
 python pose-metrics-analysis.py # Detailed pose analysis
 ```
 
+### Grayscale Inference
+
+You can run individual image tests in grayscale to evaluate robustness to lighting/texture:
+
+```bash
+python test-individual.py --grayscale
+```
+
+- By default, temporary grayscale copies are created under a split-specific temp folder (e.g., `dataset/<name>/<split>_gray_tmp`) and automatically deleted at the end of the run.
+- To keep the grayscale temp images for inspection, add `--keep-temp`.
+
+### Cleanup
+
+If any grayscale temp folders remain (e.g., after an interrupted run), use the provided cleanup utility:
+
+```bash
+# Dry run: show what would be removed
+python3 cleanup_gray_tmp.py --dry-run
+
+# Actually remove found *_gray_tmp directories (non-interactive)
+python3 cleanup_gray_tmp.py --yes
+
+# Optional: limit scan to a specific root
+python3 cleanup_gray_tmp.py --root dataset --yes
+```
+
 ### Dataset Visualization
 
 Visualize your training annotations:
