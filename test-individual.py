@@ -5,6 +5,7 @@ import argparse
 from pathlib import Path
 import shutil
 import yaml
+from datetime import datetime
 
 
 def make_gray_image_if_needed(dataset_root: Path, split: str, img_name: str, keep_temp: bool = False) -> Path:
@@ -21,12 +22,13 @@ def make_gray_image_if_needed(dataset_root: Path, split: str, img_name: str, kee
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str, default='runs/moorebot_v4/train-v1/yolo11n-moorebot_v4-pose-v1/weights/best.pt')
-    parser.add_argument('--dataset', type=str, default='./dataset/moorebot_v4')
+    parser.add_argument('--model', type=str, default='runs/moorebot_v5/train-v1/yolo11n-moorebot_v5-pose-v1/weights/best.pt')
+    parser.add_argument('--dataset', type=str, default='./dataset/moorebot_v5')
     parser.add_argument('--split', type=str, default='test')
-    parser.add_argument('--count', type=int, default=5, help='Number of images to run')
+    parser.add_argument('--count', type=int, default=2, help='Number of images to run')
     parser.add_argument('--grayscale', action='store_true', help='Convert images to grayscale before inference')
     parser.add_argument('--keep-temp', action='store_true', help='Do not delete temporary grayscale images')
+    parser.add_argument('--tag', type=str, default='', help='Optional tag to include in tests output path')
     return parser.parse_args()
 
 
@@ -69,8 +71,18 @@ def main():
 
                 # Plot and save results
                 annotated_frame = result.plot()
-                output_path = f"test_results_{img_name}"
-                cv2.imwrite(output_path, annotated_frame)
+
+                # Build structured output directory under tests/
+                dataset_name = Path(args.dataset).name
+                model_name = Path(args.model).parent.parent.name if 'weights' in args.model else Path(args.model).stem
+                timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+                tag = args.tag.strip().replace(' ', '_')
+                base_dir = Path('tests') / dataset_name / args.split / model_name
+                out_dir = base_dir / (tag if tag else timestamp)
+                out_dir.mkdir(parents=True, exist_ok=True)
+
+                output_path = out_dir / f"{img_name}"
+                cv2.imwrite(str(output_path), annotated_frame)
                 print(f" Saved result: {output_path}")
 
     finally:

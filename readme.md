@@ -64,6 +64,19 @@ python test-individual.py      # Individual image testing
 python pose-metrics-analysis.py # Detailed pose analysis
 ```
 
+### Results Location
+
+Outputs from testing are saved under a structured `tests/`:
+
+- Pattern: `tests/<dataset>/<split>/<model>/<tag|timestamp>/`
+- Example: `tests/moorebot_v4/test/yolo11n-moorebot_v5-pose-v1/smoke/DSC04824...jpg`
+
+Control the final folder with `--tag` (falls back to a timestamp if omitted):
+
+```bash
+python test-individual.py --count 2 --tag smoke
+```
+
 ### Grayscale Inference
 
 You can run individual image tests in grayscale to evaluate robustness to lighting/texture:
