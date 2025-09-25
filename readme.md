@@ -64,6 +64,18 @@ python test-individual.py      # Individual image testing
 python pose-metrics-analysis.py # Detailed pose analysis
 ```
 
+#### Pose metrics analysis
+
+`pose-metrics-analysis.py` evaluates a trained Ultralytics YOLO pose model on the test split and reports:
+- Pose metrics: mAP50, mAP75, and mAP50–95 (plus box mAPs)
+- PCK@0.1 and PCK@0.2 (overall and per keypoint)
+- A per-keypoint PCK bar chart saved under `runs/pose/pck/` (e.g., `pck_per_keypoint_YYYYMMDD-HHMMSS.png`)
+
+Assumptions:
+- Model weights path is set in the script
+- Test data under `datasets/moorebot_vX/test/{images,labels}` (YOLO pose format)
+- Keypoint names can be customized via `KEYPOINT_NAMES` (order maps to ids 0..K-1)
+
 ### Results Location
 
 Outputs from testing are saved under a structured `tests/`:
@@ -127,6 +139,7 @@ names: ['robot']
 
 ## Datasets
 The datasets can be found in roboflow universe:
+- [version 5](https://universe.roboflow.com/moorebot-scout/moorebot-pose-g9lqr/dataset/5): New images added and the same pre-processing and augmentation applied as in version 4.
 - [version 4](https://universe.roboflow.com/moorebot-scout/moorebot-pose-g9lqr/dataset/4): Data set curation performed to add preprocessing steps and augmentations.
 - [version 3](https://universe.roboflow.com/moorebot-scout/moorebot-pose-g9lqr/dataset/3): More images added, keypoints sceleton remained the same.
 - [version 2](https://universe.roboflow.com/moorebot-scout/moorebot-pose-g9lqr/dataset/2): Initial small datset, sceleton definition updated, results more promisin.
