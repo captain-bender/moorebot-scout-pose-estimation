@@ -64,23 +64,47 @@ python test-individual.py      # Individual image testing
 python pose-metrics-analysis.py # Detailed pose analysis
 ```
 
-#### Pose metrics analysis
+### Metrics
 
-`pose-metrics-analysis.py` evaluates a trained Ultralytics YOLO pose model on the test split and reports:
-- Pose metrics: mAP50, mAP75, and mAP50–95 (plus box mAPs)
-- PCK@0.1 and PCK@0.2 (overall and per keypoint)
-- A per-keypoint PCK bar chart saved under `runs/pose/pck/` (e.g., `pck_per_keypoint_YYYYMMDD-HHMMSS.png`)
-- Object Keypoint Similarity (OKS) which measures similarity between predicted and ground-truth keypoints (0–1), normalized by object area and per-keypoint tolerances (sigmas). It is aggregated into AP the same way as detection mAP, but with OKS thresholds instead of IoU.
+### 1) Pose Estimation Metrics
+Evaluates the accuracy of the predicted robot poses against ground truth (GT) annotations:
+- **mAP50**: Mean Average Precision at IoU=0.50.
+- **mAP75**: Mean Average Precision at IoU=0.75.
+- **mAP50-95**: Mean Average Precision at IoU=0.50 to 0.95 (incremental 0.05).
 
-Reported metrics:
-- OKS AP@[.50:.95]: mean AP over thresholds 0.50, 0.55, …, 0.95 (primary score).
+Notes:
+- Ensure your test data is correctly formatted and includes GT annotations.
+
+### 2) PCK (Percentage of Correct Keypoints)
+Measures the percentage of correctly predicted keypoints:
+- Overall and per keypoint at thresholds 0.1 and 0.2.
+
+Notes:
+- Requires correct GT keypoint annotations in the test set.
+
+### 3) OKS (Object Keypoint Similarity)
+Evaluates the similarity between predicted and GT keypoints, normalized by object area:
+- OKS AP@[.50:.95]: mean AP over thresholds 0.50, 0.55, …, 0.95.
 - OKS AP@0.50: lenient match criterion.
 - OKS AP@0.75: stricter localization.
 
-Assumptions:
-- Model weights path is set in the script
-- Test data under `datasets/moorebot_vX/test/{images,labels}` (YOLO pose format)
-- Keypoint names can be customized via `KEYPOINT_NAMES` (order maps to ids 0..K-1)
+Notes:
+- OKS thresholds can be adjusted in the script for different evaluation criteria.
+
+### 4) Inference Time
+Measures the time taken for the model to predict poses on the test set.
+
+Notes:
+- Ensure a consistent environment for timing (e.g., same hardware, no other heavy processes running).
+
+### 5) Keypoint Confidence (new)
+Aggregates confidences of predicted keypoints across the test set (no GT matching):
+- Overall: count, mean, median, std, and share above thresholds (default: 0.3, 0.5, 0.7).
+- Per-detection: average keypoint confidence per detected instance (mean/median).
+- Per-keypoint: mean, count, and share above thresholds (e.g., >= 0.5) for each keypoint index (uses `KEYPOINT_NAMES`).
+
+Notes:
+- This summarizes predicted confidences only.
 
 ### Results Location
 
@@ -157,6 +181,4 @@ The datasets can be found in roboflow universe:
 - `opencv-python` - Image processing and display
 - `torch` - PyTorch deep learning framework
 - `torchvision` - Computer vision utilities
-
-
 

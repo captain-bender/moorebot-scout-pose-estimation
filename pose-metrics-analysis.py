@@ -14,7 +14,7 @@ print("POSE ESTIMATION QUALITY METRICS")
 print("=" * 50)
 
 # 1. Standard YOLO validation metrics
-print("\n 1. STANDARD YOLO METRICS:")
+print("\nSTANDARD YOLO METRICS:")
 results = model.val(
     data="./datasets/moorebot_v5/data.yaml",
     split='test',
@@ -36,7 +36,7 @@ if hasattr(results, 'box') and results.box is not None:
     print(f" Box mAP50:      {results.box.map50:.4f}")
     print(f" Box mAP50-95:   {results.box.map:.4f}")
 
-print("\n 2. POSE-SPECIFIC QUALITY METRICS:")
+print("\nPOSE-SPECIFIC QUALITY METRICS:")
 
 # Custom pose evaluation
 def calculate_pose_metrics(model, test_dir, labels_dir):
@@ -511,7 +511,7 @@ def summarize_oks_distribution(model, test_dir, labels_dir, thresholds=(0.50, 0.
         return
 
     arr = np.array(oks_samples, dtype=float)
-    print("\n OKS distribution (matched pairs):")
+    print("\n Distribution (matched pairs):")
     print(f"   count: {arr.size}, mean: {arr.mean():.3f}, median: {np.median(arr):.3f}, max: {arr.max():.3f}")
     for t in thresholds:
         share = (arr >= t).mean()
@@ -539,63 +539,117 @@ if os.path.exists(test_dir) and os.path.exists(labels_dir):
     except Exception as e:
         print(f"  Failed to plot per-keypoint PCK: {e}")
 
-    # ---------------------------
-    # OKS mAP metrics
-    # ---------------------------
-    oks_metrics = calculate_oks_map(model, test_dir, labels_dir, oks_thresholds=np.arange(0.50, 0.96, 0.05), limit=None, use_iou_gate=False)
-    print("\n OKS METRICS:")
-    print(f"   OKS AP@[.50:.95]: {oks_metrics['AP']:.3f}")
-    print(f"   OKS AP@0.50:      {oks_metrics['AP50']:.3f}")
-    print(f"   OKS AP@0.75:      {oks_metrics['AP75']:.3f}")
+# ---------------------------
+# OKS mAP metrics
+# ---------------------------
+oks_metrics = calculate_oks_map(model, test_dir, labels_dir, oks_thresholds=np.arange(0.50, 0.96, 0.05), limit=None, use_iou_gate=False)
+print("\nOKS METRICS:")
+print(f"   OKS AP@[.50:.95]: {oks_metrics['AP']:.3f}")
+print(f"   OKS AP@0.50:      {oks_metrics['AP50']:.3f}")
+print(f"   OKS AP@0.75:      {oks_metrics['AP75']:.3f}")
 
-    # Optional: inspect where scores land
-    summarize_oks_distribution(model, test_dir, labels_dir, use_iou_gate=False)
+# Optional: inspect where scores land
+summarize_oks_distribution(model, test_dir, labels_dir, use_iou_gate=False)
 
-# print("\n3. KEY POSE ESTIMATION METRICS EXPLAINED:")
-# print("""
-# POSE mAP50:
-#    - Measures keypoint detection accuracy at IoU threshold 0.5
-#    - Range: 0.0-1.0 (higher is better)
-#    - Good: >0.7, Excellent: >0.9
+def calculate_keypoint_confidence(model, test_dir, limit=None, thresholds=(0.3, 0.5, 0.7)):
+    """Aggregate predicted keypoint confidence statistics over the test set."""
+    images = [f for f in os.listdir(test_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    images.sort()
+    if limit:
+        images = images[:limit]
 
-# POSE mAP50-95:
-#    - Average mAP across IoU thresholds 0.5-0.95
-#    - More strict metric (harder to achieve high scores)
-#    - Good: >0.5, Excellent: >0.8
+    all_confs = []
+    per_kpt_confs = {}  # k -> list[float]
+    per_det_avg_confs = []  # mean confidence per detected instance
 
-# PCK (Percentage of Correct Keypoints):
-#    - Percentage of keypoints within threshold distance from ground truth
-#    - Usually measured as percentage of head size or torso size
-#    - Good: >80%, Excellent: >95%
+    for img_name in images:
+        img_path = os.path.join(test_dir, img_name)
+        preds = model(img_path, verbose=False)[0]
+        if preds is None or preds.keypoints is None:
+            continue
 
-# OKS (Object Keypoint Similarity):
-#    - Similar to IoU but for keypoints
-#    - Accounts for keypoint visibility and importance
-#    - Used in COCO pose evaluation
+        # confidences: shape (N, K)
+        conf = preds.keypoints.conf
+        if conf is None:
+            continue
+        conf = conf.cpu().numpy()
+        if conf.size == 0:
+            continue
 
-# Keypoint Confidence:
-#    - How confident the model is about each keypoint
-#    - Higher confidence = more reliable detection
-#    - Threshold: typically 0.5 or 0.3
-# """)
+        # Per-detection average confidence
+        per_det_avg_confs.extend(np.nanmean(conf, axis=1).tolist())
 
-# print("\n💡 INTERPRETATION GUIDE:")
-# print("""
-# For Robot Pose Detection:
-#    - mAP50 > 0.8:  Excellent detection
-#    - mAP50 > 0.6:  Good detection  
-#    - mAP50 > 0.4:  Acceptable for some applications
-#    - mAP50 < 0.4:  Needs improvement
+        # Collect overall and per-kpt confidences
+        flat = conf.reshape(-1)
+        flat = flat[np.isfinite(flat)]
+        all_confs.extend(flat.tolist())
 
-# Focus Areas:
-#    - If Box mAP is high but Pose mAP is low: Good at finding robots, bad at keypoints
-#    - If both are low: Need more training data or different model
-#    - Check confidence scores in individual predictions
-# """)
+        K = conf.shape[1]
+        for k in range(K):
+            vals = conf[:, k]
+            vals = vals[np.isfinite(vals)]
+            if vals.size == 0:
+                continue
+            per_kpt_confs.setdefault(k, []).extend(vals.tolist())
 
-# print(f"\n💾 Detailed results saved in: runs/pose/val/")
-# print("📁 Check these files for visual analysis:")
-# print("   - val_batch*_pred.jpg (predictions)")
-# print("   - val_batch*_labels.jpg (ground truth)")
-# print("   - PosePR_curve.png (precision-recall curve)")
-# print("   - PoseF1_curve.png (F1 score curve)")
+    if len(all_confs) == 0:
+        return {
+            'count': 0,
+            'mean': 0.0,
+            'median': 0.0,
+            'std': 0.0,
+            'shares_above': {t: 0.0 for t in thresholds},
+            'per_keypoint_mean': {},
+            'per_keypoint_median': {},
+            'per_keypoint_count': {},
+            'per_keypoint_shares_above': {t: {} for t in thresholds},
+            'per_detection_avg_mean': 0.0,
+            'per_detection_avg_median': 0.0,
+        }
+    
+    arr = np.array(all_confs, dtype=float)
+    shares = {t: float((arr >= t).mean()) for t in thresholds}
+
+    per_kpt_mean = {k: float(np.mean(v)) for k, v in per_kpt_confs.items()}
+    per_kpt_median = {k: float(np.median(v)) for k, v in per_kpt_confs.items()}
+    per_kpt_count = {k: int(len(v)) for k, v in per_kpt_confs.items()}
+    per_kpt_shares = {t: {k: float((np.array(v) >= t).mean()) for k, v in per_kpt_confs.items()} for t in thresholds}
+
+    det_avg = np.array(per_det_avg_confs, dtype=float) if per_det_avg_confs else np.array([], dtype=float)
+
+    return {
+        'count': int(arr.size),
+        'mean': float(arr.mean()),
+        'median': float(np.median(arr)),
+        'std': float(arr.std()),
+        'shares_above': shares,
+        'per_keypoint_mean': per_kpt_mean,
+        'per_keypoint_median': per_kpt_median,
+        'per_keypoint_count': per_kpt_count,
+        'per_keypoint_shares_above': per_kpt_shares,
+        'per_detection_avg_mean': float(det_avg.mean()) if det_avg.size > 0 else 0.0,
+        'per_detection_avg_median': float(np.median(det_avg)) if det_avg.size > 0 else 0.0,
+    }
+
+# ---------------------------
+# Keypoint confidence statistics
+# ---------------------------
+if os.path.exists(test_dir):
+    conf_metrics = calculate_keypoint_confidence(model, test_dir, limit=None, thresholds=(0.3, 0.5, 0.7))
+    print("\nKEYPOINT CONFIDENCE")
+    print(f"   samples: {conf_metrics['count']}")
+    print(f"   mean / median / std: {conf_metrics['mean']:.3f} / {conf_metrics['median']:.3f} / {conf_metrics['std']:.3f}")
+    for t, s in conf_metrics['shares_above'].items():
+        print(f"   share >= {t:.1f}: {s:.3f}")
+    print(f"   per-detection avg confidence (mean/median): {conf_metrics['per_detection_avg_mean']:.3f} / {conf_metrics['per_detection_avg_median']:.3f}")
+
+    if conf_metrics['per_keypoint_mean']:
+        print("   Per-keypoint mean confidence:")
+        for k in sorted(conf_metrics['per_keypoint_mean'].keys()):
+            name = _kpt_name(k, KEYPOINT_NAMES)
+            mean_v = conf_metrics['per_keypoint_mean'][k]
+            cnt = conf_metrics['per_keypoint_count'].get(k, 0)
+            s50 = conf_metrics['per_keypoint_shares_above'][0.5].get(k, 0.0)
+            print(f"     - {name}: {mean_v:.3f} (n={cnt}, share>=0.5: {s50:.3f})")
+
+
