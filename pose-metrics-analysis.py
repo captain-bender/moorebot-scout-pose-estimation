@@ -287,6 +287,236 @@ if os.path.exists(test_dir):
 else:
     print("  Test directory not found")
 
+# ---------------------------
+# OKS (Object Keypoint Similarity) mAP
+# ---------------------------
+OKS_SIGMAS = np.array([0.07, 0.06, 0.07], dtype=float)
+
+def _oks(gt_kpts, pred_kpts, gt_bbox, sigmas=None):
+    # gt_kpts: list of (x,y,v)
+    # pred_kpts: (K,2) ndarray
+    # gt_bbox: (x1,y1,x2,y2)
+    # sigmas: (K,) ndarray; will be broadcast/truncated to min K
+    x1, y1, x2, y2 = gt_bbox
+    area = max(1.0, float((x2 - x1) * (y2 - y1)))
+
+    K = min(len(gt_kpts), pred_kpts.shape[0])
+    if K <= 0:
+        return 0.0
+
+    g = np.array(gt_kpts[:K], dtype=float)  # (K,3)
+    p = np.array(pred_kpts[:K], dtype=float)  # (K,2)
+
+    vis = (g[:, 2] > 0).astype(float)  # only visible/labeled keypoints
+    if vis.sum() == 0:
+        return 0.0
+
+    dx = p[:, 0] - g[:, 0]
+    dy = p[:, 1] - g[:, 1]
+    d2 = dx * dx + dy * dy
+
+    if sigmas is None or len(sigmas) < K:
+        s = np.full(K, 0.05, dtype=float)
+    else:
+        s = np.array(sigmas[:K], dtype=float)
+
+    vars_ = (s * 2) ** 2  # follow COCO convention
+    e = np.exp(-d2 / (2 * vars_ * area + 1e-9))
+    oks = (e * vis).sum() / (vis.sum() + 1e-9)
+    return float(oks)
+
+
+def _ap_from_pr(rec, prec):
+    # 101-point interpolated AP
+    mrec = np.concatenate(([0.0], rec, [1.0]))
+    mpre = np.concatenate(([0.0], prec, [0.0]))
+    for i in range(mpre.size - 1, 0, -1):
+        mpre[i - 1] = max(mpre[i - 1], mpre[i])
+    x = np.linspace(0, 1, 101)
+    p = np.interp(x, mrec, mpre)
+    return float(p.mean())
+
+
+def calculate_oks_map(model, test_dir, labels_dir, oks_thresholds=None, limit=None, use_iou_gate=False, iou_thresh=0.5):
+    if oks_thresholds is None:
+        # ensure Python floats (not numpy scalars) and stable rounding
+        oks_thresholds = [float(f"{t:.2f}") for t in np.arange(0.50, 0.96, 0.05)]
+
+    images = [f for f in os.listdir(test_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    images.sort()
+    if limit:
+        images = images[:limit]
+
+    # Prepare accumulators
+    ap_by_thr = {}
+    npos_total = 0  # number of GT persons
+
+    # Pre-collect per-image data to avoid recompute
+    per_image = []
+    for img_name in images:
+        img_path = os.path.join(test_dir, img_name)
+        img = cv2.imread(img_path)
+        if img is None:
+            continue
+        h, w = img.shape[:2]
+        label_path = os.path.join(labels_dir, os.path.splitext(img_name)[0] + '.txt')
+        gts = _read_yolo_pose_labels(label_path, w, h)
+        if not gts:
+            per_image.append(([], [], []))
+            continue
+
+        preds = model(img_path, verbose=False)[0]
+        if preds is None or preds.boxes is None or preds.keypoints is None:
+            per_image.append((gts, [], []))
+            npos_total += len(gts)
+            continue
+
+        pred_boxes = preds.boxes.xyxy.cpu().numpy()  # (N,4)
+        pred_scores = preds.boxes.conf.cpu().numpy() if preds.boxes.conf is not None else np.ones((pred_boxes.shape[0],), dtype=float)
+        pred_kpts = preds.keypoints.xy.cpu().numpy()  # (N,K,2)
+
+        per_image.append((gts, list(zip(pred_boxes, pred_kpts, pred_scores)), pred_boxes))
+        npos_total += len(gts)
+
+    if npos_total == 0:
+        return {'AP': 0.0, 'AP50': 0.0, 'AP75': 0.0, 'AP_by_threshold': {}, 'npos': 0}
+
+    # Evaluate for each OKS threshold
+    for thr in oks_thresholds:
+        thr = float(thr)
+        scores_all = []
+        tps_all = []
+        fps_all = []
+
+        for (gts, preds, _) in per_image:
+            # Sort predictions by confidence descending
+            preds_sorted = sorted(preds, key=lambda x: float(x[2]), reverse=True)
+
+            gt_matched = np.zeros((len(gts),), dtype=bool)
+
+            for pb, pk, ps in preds_sorted:
+                # choose best GT by OKS (optionally gate by IoU)
+                best_i = -1
+                best_oks = -1.0
+                for gi, gt in enumerate(gts):
+                    if gt_matched[gi]:
+                        continue
+                    if use_iou_gate:
+                        if _iou_xyxy(tuple(pb.tolist()), gt['bbox']) < iou_thresh:
+                            continue
+                    oks = _oks(gt['kpts'], pk, gt['bbox'], sigmas=OKS_SIGMAS)
+                    if oks > best_oks:
+                        best_oks, best_i = oks, gi
+
+                scores_all.append(float(ps))
+                if best_i >= 0 and best_oks >= thr:
+                    tps_all.append(1.0)
+                    fps_all.append(0.0)
+                    gt_matched[best_i] = True
+                else:
+                    tps_all.append(0.0)
+                    fps_all.append(1.0)
+
+        if len(scores_all) == 0:
+            ap_by_thr[thr] = 0.0
+            continue
+
+        # Sort globally by confidence
+        order = np.argsort(-np.array(scores_all))
+        tps = np.array(tps_all)[order]
+        fps = np.array(fps_all)[order]
+
+        cum_tp = np.cumsum(tps)
+        cum_fp = np.cumsum(fps)
+
+        recalls = cum_tp / max(1, npos_total)
+        precisions = cum_tp / np.maximum(1, cum_tp + cum_fp)
+
+        ap_by_thr[thr] = _ap_from_pr(recalls, precisions)
+
+    def _ap_lookup(ap_dict, target, tol=1e-6):
+        # robustly fetch AP for a target threshold
+        if not ap_dict:
+            return 0.0
+        keys = np.array([float(k) for k in ap_dict.keys()], dtype=float)
+        idx = int(np.argmin(np.abs(keys - float(target))))
+        return float(list(ap_dict.values())[idx]) if abs(keys[idx] - float(target)) <= tol else 0.0
+
+    ap_vals = list(ap_by_thr.values())
+    AP = float(np.mean(ap_vals)) if ap_vals else 0.0
+    AP50 = _ap_lookup(ap_by_thr, 0.50)
+    AP75 = _ap_lookup(ap_by_thr, 0.75)
+
+    return {
+        'AP': AP,
+        'AP50': AP50,
+        'AP75': AP75,
+        'AP_by_threshold': ap_by_thr,
+        'npos': npos_total,
+    }
+
+def summarize_oks_distribution(model, test_dir, labels_dir, thresholds=(0.50, 0.60, 0.70, 0.75, 0.80, 0.90), limit=None, use_iou_gate=False, iou_thresh=0.5):
+    images = [f for f in os.listdir(test_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    images.sort()
+    if limit:
+        images = images[:limit]
+
+    oks_samples = []
+
+    for img_name in images:
+        img_path = os.path.join(test_dir, img_name)
+        img = cv2.imread(img_path)
+        if img is None:
+            continue
+        h, w = img.shape[:2]
+        gts = _read_yolo_pose_labels(os.path.join(labels_dir, os.path.splitext(img_name)[0] + '.txt'), w, h)
+        if not gts:
+            continue
+
+        pred = model(img_path, verbose=False)[0]
+        if pred is None or pred.boxes is None or pred.keypoints is None:
+            continue
+
+        pred_boxes = pred.boxes.xyxy.cpu().numpy()
+        pred_kpts = pred.keypoints.xy.cpu().numpy()  # (P,K,2)
+
+        if len(pred_boxes) == 0 or len(gts) == 0:
+            continue
+
+        # Compute OKS matrix (P x G)
+        P, G = len(pred_boxes), len(gts)
+        oks_mat = np.zeros((P, G), dtype=float)
+        for i in range(P):
+            for j in range(G):
+                if use_iou_gate and _iou_xyxy(tuple(pred_boxes[i].tolist()), gts[j]['bbox']) < iou_thresh:
+                    oks_mat[i, j] = -1.0
+                else:
+                    oks_mat[i, j] = _oks(gts[j]['kpts'], pred_kpts[i], gts[j]['bbox'], sigmas=OKS_SIGMAS)
+
+        # Greedy match by OKS and collect matched OKS
+        used_p, used_g = set(), set()
+        while True:
+            idx = np.unravel_index(np.argmax(oks_mat), oks_mat.shape)
+            best = oks_mat[idx]
+            if best < 0:  # no valid pairs left
+                break
+            i, j = int(idx[0]), int(idx[1])
+            oks_samples.append(float(best))
+            used_p.add(i); used_g.add(j)
+            oks_mat[i, :] = -1.0
+            oks_mat[:, j] = -1.0
+
+    if not oks_samples:
+        print("  No OKS pairs to summarize.")
+        return
+
+    arr = np.array(oks_samples, dtype=float)
+    print("\n OKS distribution (matched pairs):")
+    print(f"   count: {arr.size}, mean: {arr.mean():.3f}, median: {np.median(arr):.3f}, max: {arr.max():.3f}")
+    for t in thresholds:
+        share = (arr >= t).mean()
+        print(f"   share >= {t:.2f}: {share:.3f}")
+
 # Compute PCK metrics
 if os.path.exists(test_dir) and os.path.exists(labels_dir):
     pck_metrics = calculate_pck(model, test_dir, labels_dir, alphas=(0.1, 0.2), iou_thresh=0.5, limit=None)
@@ -294,7 +524,6 @@ if os.path.exists(test_dir) and os.path.exists(labels_dir):
     for alpha, val in pck_metrics['pck'].items():
         print(f"   PCK@{alpha:.1f}: {val:.3f}  ({pck_metrics['corrects'][alpha]}/{pck_metrics['totals'][alpha]} keypoints)")
     print(f"   Matched predictions/GT pairs: {pck_metrics['matched_pairs']}/{pck_metrics['total_gts']}")
-    # Per-keypoint breakdown
     for alpha, per_k in pck_metrics['per_keypoint_pck'].items():
         if not per_k:
             continue
@@ -305,11 +534,22 @@ if os.path.exists(test_dir) and os.path.exists(labels_dir):
             val = per_k[k_idx]
             print(f"     - {_kpt_name(k_idx, KEYPOINT_NAMES)}: {val:.3f} ({corr}/{tot})")
 
-    # Plot per-keypoint PCK bar chart
     try:
         plot_per_keypoint_pck(pck_metrics, keypoint_names=KEYPOINT_NAMES, alphas=(0.1, 0.2))
     except Exception as e:
         print(f"  Failed to plot per-keypoint PCK: {e}")
+
+    # ---------------------------
+    # OKS mAP metrics
+    # ---------------------------
+    oks_metrics = calculate_oks_map(model, test_dir, labels_dir, oks_thresholds=np.arange(0.50, 0.96, 0.05), limit=None, use_iou_gate=False)
+    print("\n OKS METRICS:")
+    print(f"   OKS AP@[.50:.95]: {oks_metrics['AP']:.3f}")
+    print(f"   OKS AP@0.50:      {oks_metrics['AP50']:.3f}")
+    print(f"   OKS AP@0.75:      {oks_metrics['AP75']:.3f}")
+
+    # Optional: inspect where scores land
+    summarize_oks_distribution(model, test_dir, labels_dir, use_iou_gate=False)
 
 # print("\n3. KEY POSE ESTIMATION METRICS EXPLAINED:")
 # print("""

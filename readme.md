@@ -70,6 +70,12 @@ python pose-metrics-analysis.py # Detailed pose analysis
 - Pose metrics: mAP50, mAP75, and mAP50–95 (plus box mAPs)
 - PCK@0.1 and PCK@0.2 (overall and per keypoint)
 - A per-keypoint PCK bar chart saved under `runs/pose/pck/` (e.g., `pck_per_keypoint_YYYYMMDD-HHMMSS.png`)
+- Object Keypoint Similarity (OKS) which measures similarity between predicted and ground-truth keypoints (0–1), normalized by object area and per-keypoint tolerances (sigmas). It is aggregated into AP the same way as detection mAP, but with OKS thresholds instead of IoU.
+
+Reported metrics:
+- OKS AP@[.50:.95]: mean AP over thresholds 0.50, 0.55, …, 0.95 (primary score).
+- OKS AP@0.50: lenient match criterion.
+- OKS AP@0.75: stricter localization.
 
 Assumptions:
 - Model weights path is set in the script
