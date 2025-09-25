@@ -67,7 +67,6 @@ labels.jpg
 improved_training.py
 tta_inference.py
 accuracy_improvement_guide.py
-pose-metrics-analysis.py
 inference-timing.py
 
 # Keep README and project files
