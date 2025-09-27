@@ -2,7 +2,12 @@
 """
 run_inference.py
 
-Lightweight utility to run pose inference with a (pre)trained YOLO pose model on arbitrary
+Lightweight utility to run pose in    p.add_argument('--show', action='store_true', help='Show annotated images in a window')
+    p.add_argument('--device', type=str, default=None, help='Device override (e.g. 0, cpu)')
+    p.add_argument('--verbose', action='store_true', help='Verbose model output')
+    p.add_argument('--calc-orientation', action='store_true', help='Calculate robot orientation from keypoint triangle')
+    p.add_argument('--front-point', type=int, default=0, choices=[0, 1, 2], help='Index of keypoint representing robot front (0, 1, or 2)')
+    return p.parse_args()nce with a (pre)trained YOLO pose model on arbitrary
 image files or folders of new photos (not necessarily in the training dataset structure).
 
 Features:
@@ -78,8 +83,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument('--save-json', action='store_true', help='Save detections as JSON (per run)')
     p.add_argument('--json-name', type=str, default='results.json', help='Filename for JSON output (inside out dir)')
     p.add_argument('--show', action='store_true', help='Show annotated images in a window')
-    p.add_argument('--device', type=str, default=[0], help='Device override (e.g. 0, cpu)')
+    p.add_argument('--device', type=str, default=None, help='Device override (e.g. 0, cpu)')
     p.add_argument('--verbose', action='store_true', help='Verbose model output')
+    p.add_argument('--calc-orientation', action='store_true', help='Calculate robot orientation from keypoint triangle')
+    p.add_argument('--front-point', type=int, default=0, choices=[0, 1, 2], help='Index of keypoint representing robot front (0, 1, or 2)')
     return p.parse_args()
 
 
@@ -117,6 +124,74 @@ def convert_to_gray(img_bgr):
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     # Keep shape compatible (H,W,1) then broadcast
     return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+
+
+def calculate_robot_orientation(keypoints: list, front_point_idx: int = 0) -> dict:
+    """
+    Calculate robot orientation based on triangle formed by 3 keypoints.
+    
+    Args:
+        keypoints: List of dicts with 'x', 'y', 'conf' keys
+        front_point_idx: Index of the keypoint representing the robot's front (0, 1, or 2)
+    
+    Returns:
+        dict with orientation info: angle_degrees, front_point, centroid, etc.
+        Returns None if insufficient keypoints or low confidence.
+    """
+    import math
+    
+    if len(keypoints) < 3:
+        return None
+    
+    # Check confidence threshold for all keypoints
+    min_conf = 0.3
+    valid_kpts = [kp for kp in keypoints[:3] if kp.get('conf', 0) >= min_conf]
+    if len(valid_kpts) < 3:
+        return None
+    
+    # Get the three keypoints
+    kp0, kp1, kp2 = valid_kpts[:3]
+    points = [(kp0['x'], kp0['y']), (kp1['x'], kp1['y']), (kp2['x'], kp2['y'])]
+    
+    # Calculate centroid (center of triangle)
+    cx = sum(p[0] for p in points) / 3
+    cy = sum(p[1] for p in points) / 3
+    centroid = (cx, cy)
+    
+    # Get front point
+    front_point = points[front_point_idx]
+    
+    # Calculate vector from centroid to front point
+    dx = front_point[0] - cx
+    dy = front_point[1] - cy
+    
+    # Calculate angle in degrees (0° = right, 90° = up, 180° = left, 270° = down)
+    # Note: In image coordinates, Y increases downward
+    angle_rad = math.atan2(-dy, dx)  # Negative dy to account for image Y-axis
+    angle_deg = math.degrees(angle_rad)
+    
+    # Normalize to 0-360°
+    if angle_deg < 0:
+        angle_deg += 360
+    
+    # Calculate triangle area and aspect ratio for additional metrics
+    def triangle_area(p1, p2, p3):
+        return abs((p1[0] * (p2[1] - p3[1]) + p2[0] * (p3[1] - p1[1]) + p3[0] * (p1[1] - p2[1])) / 2)
+    
+    area = triangle_area(*points)
+    
+    # Calculate distances from centroid to each point
+    dists = [math.sqrt((p[0] - cx)**2 + (p[1] - cy)**2) for p in points]
+    
+    return {
+        'orientation_degrees': round(angle_deg, 1),
+        'front_point_idx': front_point_idx,
+        'front_point': {'x': round(front_point[0], 1), 'y': round(front_point[1], 1)},
+        'centroid': {'x': round(cx, 1), 'y': round(cy, 1)},
+        'triangle_area': round(area, 1),
+        'keypoint_distances': [round(d, 1) for d in dists],
+        'avg_distance': round(sum(dists) / len(dists), 1)
+    }
 
 
 def run_inference_on_image(model: YOLO, img_path: Path, args: argparse.Namespace):
@@ -189,6 +264,16 @@ def run_inference_on_image(model: YOLO, img_path: Path, args: argparse.Namespace
                         pc = float(kp_conf[i, k]) if (kp_conf is not None) else None
                         pts.append({'x': px, 'y': py, 'conf': pc})
                     det['keypoints'] = pts
+                    
+                    # Calculate orientation if requested
+                    if args.calc_orientation:
+                        orientation = calculate_robot_orientation(pts, args.front_point)
+                        if orientation:
+                            det['orientation'] = orientation
+                            print(f"      Robot orientation: {orientation['orientation_degrees']}° (front point {args.front_point})")
+                        else:
+                            print(f"      Unable to calculate orientation (insufficient confidence)")
+                
                 detections_serializable.append(det)
     except Exception as e:
         # Keep error on single line to avoid breaking f-string
@@ -207,6 +292,8 @@ def main():
         print(" Image sizing: native per-image resolution")
     else:
         print(f" Image sizing: fixed square {args.imgsz}")
+    if args.calc_orientation:
+        print(f" Orientation: enabled (front point index: {args.front_point})")
 
     image_paths = collect_image_paths(args.source)
     if not image_paths:
