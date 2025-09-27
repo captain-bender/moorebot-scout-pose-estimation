@@ -76,3 +76,4 @@ inference-timing.py
 /datasets/
 /runs/
 /tests/
+/inference_outputs/

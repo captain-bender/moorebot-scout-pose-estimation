@@ -64,6 +64,70 @@ python test-individual.py      # Individual image testing
 python pose-metrics-analysis.py # Detailed pose analysis
 ```
 
+### Quick Inference on New Photos (Ad-hoc images)
+
+Run pose inference on arbitrary photos that are not inside the dataset structure using the new `run_inference.py` utility.
+
+Basic examples:
+```bash
+# Single image
+python run_inference.py --source misc/DSC04919.JPG --model runs/moorebot_v5/train-v1/yolo11n-moorebot_v5-pose-v1/weights/best.pt
+
+# All JPG images inside a folder
+python run_inference.py --source /path/to/new_photos --model runs/moorebot_v5/train-v1/yolo11n-moorebot_v5-pose-v1/weights/best.pt
+
+# Glob pattern (quote globs so the shell doesn't expand unexpectedly)
+python run_inference.py --source 'new_photos/**/*.png' --model runs/moorebot_v5/train-v1/yolo11n-moorebot_v5-pose-v1/weights/best.pt
+
+# Save JSON with structured detections (bboxes + keypoints)
+python run_inference.py --source misc --save-json --out inference_outputs/moorebot_samples \
+      --model runs/moorebot_v5/train-v1/yolo11n-moorebot_v5-pose-v1/weights/best.pt
+
+# Grayscale (in-memory conversion) + show annotated window
+python run_inference.py --source misc --grayscale --show \
+      --model runs/moorebot_v5/train-v1/yolo11n-moorebot_v5-pose-v1/weights/best.pt
+
+# Use each image's native resolution (no uniform square resize)
+python run_inference.py --source misc --native \
+   --model runs/moorebot_v5/train-v1/yolo11n-moorebot_v5-pose-v1/weights/best.pt
+```
+
+Key options:
+- `--source`: File, directory, or glob pattern.
+- `--out`: Output directory (default auto timestamp under `inference_outputs/`).
+- `--save-json`: Exports a structured JSON (`results.json`) with bbox + keypoints per detection.
+- `--grayscale`: Converts each image to grayscale before inference (useful for robustness checks).
+- `--imgsz`: Override inference size (default 640). Increase (e.g. 1280) for potentially higher accuracy at cost of speed.
+- `--native`: Preserve each image's original (H,W) resolution (model still internally pads to stride).
+- `--conf` / `--iou`: Adjust thresholds for filtering.
+- `--max`: Limit number of images processed (0 = all).
+- `--show`: Open a window displaying each annotated image (ESC to abort early).
+
+JSON schema example (per run):
+```json
+[
+   {
+      "image": "sample.jpg",
+      "width": 1920,
+      "height": 1080,
+      "detections": [
+         {
+            "bbox": [x1, y1, x2, y2],
+            "score": 0.91,
+            "class": 0,
+            "keypoints": [
+               {"x": 123.4, "y": 456.7, "conf": 0.95},
+               {"x": 140.2, "y": 460.1, "conf": 0.93},
+               {"x": 160.8, "y": 470.9, "conf": 0.90}
+            ]
+         }
+      ]
+   }
+]
+```
+
+Outputs are written as annotated images plus optional JSON to the chosen output directory.
+
 ### Metrics
 
 ### 1) Pose Estimation Metrics
