@@ -1,4 +1,4 @@
-# moorebotPose - Moorebot Robot Pose Detection using YOLO11
+# moorebotPose - Moorebot Robot Pose Detection using YOLO11 Keypoint Pose
 
 A custom pose detection project using YOLO11 for detecting and tracking Moorebot scout robot keypoints for robotic applications and automation.
 
